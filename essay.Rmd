@@ -1,0 +1,101 @@
+---
+title: "Assessing the Quality of Activity Using Wearable Accelerometers"
+author: "Denny Seccon"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE)
+```
+
+## Summary
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, my goal is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants.
+
+Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E). Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes. Participants were supervised by an experienced weight lifter to make sure the execution complied to the manner they were supposed to simulate.
+
+## Reading and Formatting the Data
+
+The data is downloaded and then loaded in two variables: *training*, corresponding to the training dataset, and *testing*, corresponding to the testing dataset.
+
+```{r data1, include=FALSE}
+setwd("C:/Users/Denny/Documents/Data Science Specialization/Course 07 - Practical Machine Learning/Project/")
+library(caret)
+```
+
+```{r data2}
+training.url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testing.url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+download.file(training.url, destfile = "training.csv")
+download.file(testing.url, destfile = "testing.csv")
+
+training <- read.csv("training.csv")
+testing <- read.csv("testing.csv")
+```
+
+By checking the structure of *training*, I noticed that every time the column "new_window" is equal to "yes"", summary values (mean, variance, standard deviation, max, min, amplitude, kurtosis and skewness) are computed, for all measurement variables, corresponding to the previous time series. Intuitively, these summaries seem to be more informative than the individual measurements, therefore best choices for a prediction model. However, checking the structure of *testing*, I realized none of the 20 entries contains these summaries (also, all values in "new_window" is "no"), nor corresponds to a time series so that the summaries could be calculated. I conclude that there is no other option but to predict activity patterns based on the individual measurements. For this reason, I am creating a search variable containing the patterns for the summaries, as present in the column names, then filtering both datasets, *training* and *testing*, discarding the columns which would contain the summary values (and also columns 1:7 which give user and time informatin not relevant for the model).
+
+```{r filters}
+summaries <- "avg|var|stddev|max|min|amplitude|kurtosis|skewness"
+
+training <- training[,-c(1:7, grep(summaries, colnames(training)))]
+testing <- testing[,-c(1:7, grep(summaries, colnames(testing)))]
+```
+
+The resulting datasets contain no missing values (checked but not shown).
+
+## The Prediction Model
+
+Random forests are recommended models for noisy data such as these. I expect many prediction variables will be correlated, since all 52 are capturing similar movements in only three dimensions, so I am applying a pre-processing step with PCA. The accuracy will be checked with a cross-validation approach using 10 folds.
+
+```{r model, message = FALSE, warning = FALSE}
+set.seed(1)
+model <- train(classe ~ ., data = training, method = "rf", preProcess = "pca", trControl = trainControl(method = "cv", number = 10))
+```
+
+I will now show some information about the obtained model.
+
+### Pre-Processing Step
+
+```{r preprocess, echo = FALSE}
+print(model$preProcess)
+```
+
+The model needed 25 componentes to capture 95% of the variance.
+
+### Accuracy by Number of Variables Tried at Each Split
+
+```{r results, echo = FALSE}
+print(model$results)
+```
+
+The best accuracy was achieved selecting 2 variables at each split. This model reached 98.2% accuracy.
+
+### Accuracy at Each Fold of the Cross Validation
+
+```{r crossval, echo = FALSE}
+print(model$resample)
+```
+
+### Final Model
+
+```{r finalmodel, echo = FALSE}
+print(model$finalModel)
+```
+
+The final sample used 500 trees. The out-of-bag estimate error rate was 1.69%. The confusion matrix shows the proportion of class error, ranging from 0.4 to 3.6%.
+
+## Applying the Model to the Testing Set
+
+```{r testing}
+testing.pred <- predict(model, newdata = testing)
+print(testing.pred)
+which(testing.pred == "A")
+```
+
+I predicted that rows 2, 3, 4, 5, 9, 10, 14 and 17 were performing the activities correctly.
+
+## Reference
+
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
